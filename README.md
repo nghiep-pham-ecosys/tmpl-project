@@ -107,6 +107,7 @@ just ci      # what CI runs: test, actionlint, gitleaks
 | File | Checks |
 |---|---|
 | `tests/test_repo.py` | actions GitHub-owned and pinned by SHA; tool versions the same in `.mise.toml`, `template/.mise.toml`, `scripts/install-tools` and the generated CI; one Copier version everywhere |
+| `tests/test_install_tools.py` | runs `scripts/install-tools` offline with a fake `curl` and synthetic archives; accepts both checksum line formats (`<sha>  <file>` and uv's `<sha> *<file>`), rejects a pin that is missing or listed for another file |
 | `tests/test_render.py` | renders three answer sets (public and private); files per answer, project card, workflows, gitleaks on planted secrets, the pre-push hook, and `just ci` inside each generated repo |
 | `tests/test_update.py` | tags v0.1.0 in a scratch copy, renders and commits repos with a local edit, changes the template, tags v0.1.1, runs `copier update`; the change arrives, the local edit stays, no conflicts |
 

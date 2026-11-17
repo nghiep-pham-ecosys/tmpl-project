@@ -35,6 +35,12 @@ fetch() {
   curl -fsSL --retry 3 -o "$2" "$1"
 }
 
+# listed <sha> <file> <sums>: true if <sums> has the line "<sha>  <file>" (text mode, two spaces)
+# or "<sha> *<file>" (binary mode, which uv's release checksums use).
+listed() {
+  awk -v sha="$1" -v file="$2" '{ f = $2; sub(/^\*/, "", f) } $1 == sha && f == file { found = 1 } END { exit !found }' "$3"
+}
+
 for tool in "$@"; do
   strip=0
   case "${tool}" in
@@ -75,7 +81,7 @@ for tool in "$@"; do
   fetch "${base}/${archive}" "${work}/${archive}"
   fetch "${base}/${sums}" "${work}/${tool}.sums"
   # The pinned hash must appear in the release checksum file and match the download.
-  if ! grep -qx "${sha}  ${archive}" "${work}/${tool}.sums"; then
+  if ! listed "${sha}" "${archive}" "${work}/${tool}.sums"; then
     echo "install-tools: pinned sha256 for ${archive} is not in ${sums}" >&2
     exit 1
   fi
