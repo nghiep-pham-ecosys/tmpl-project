@@ -1,29 +1,31 @@
 """Render the template for several answer sets and check the generated repos.
 
-Runs Copier through uvx at a pinned version, so the test needs uv on PATH (mise installs it).
+Runs Copier through uvx at a pinned version (tests/_kit.py), so the test needs uv on PATH (mise installs it).
 Stdlib unittest; PyYAML is used when present for stricter YAML checks.
 """
 
 from __future__ import annotations
 
-import os
 import random
 import re
 import shutil
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
+
+from _kit import TEMPLATE, copier_command, git, missing_tools, render, tool_env
 
 try:
     import yaml
 except ImportError:  # the checks fall back to regexes
     yaml = None
 
-COPIER_VERSION = "9.19.1"
-TEMPLATE = Path(__file__).resolve().parent.parent
-
+# The base list of ADR 0005 §1: README, project.yaml and a CLAUDE.md stub; LICENSE (MIT) and NOTICE, with the
+# optional LICENSE-content (CC BY 4.0) checked in test_optional_files_follow_answers; justfile and .mise.toml;
+# CI with gitleaks, ci-result and pr-title; the private pre-push hook (also in that test). The rest supports them.
 BASE_FILES = (
     ".copier-answers.yml",
     ".github/workflows/ci.yml",
@@ -76,7 +78,6 @@ LEFTOVER = re.compile(r"\[\[ [a-z_]|\[% |\[# ")
 # rules (upstream, not this template) allowlist it in every scan mode.
 IGNORED_SECRET_PATHS = (".env", ".env.local", ".venv/lib/leak.txt", "node_modules/pkg/leak.txt")
 HISTORY_SECRET_PATHS = tuple(p for p in IGNORED_SECRET_PATHS if not p.startswith("node_modules/"))
-GIT = ["git", "-c", "user.name=Example Co", "-c", "user.email=dev@example.com", "-c", "commit.gpgsign=false"]
 
 
 def fake_aws_key() -> str:
@@ -92,30 +93,6 @@ def gitleaks(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["gitleaks", *args, "--redact", "--no-banner", "."], capture_output=True, text=True, cwd=cwd, timeout=120
     )
-
-
-def git(*args: str, cwd: Path) -> str:
-    result = subprocess.run([*GIT, *args], capture_output=True, text=True, cwd=cwd, check=True)
-    return result.stdout.strip()
-
-
-def copier_command() -> list[str] | None:
-    uvx = shutil.which("uvx")
-    if uvx:
-        return [uvx, "--from", f"copier=={COPIER_VERSION}", "copier"]
-    return None
-
-
-def render(dest: Path, answers: dict) -> subprocess.CompletedProcess:
-    cmd = copier_command()
-    assert cmd is not None
-    args = [*cmd, "copy", "--defaults", "--quiet"]
-    for key, value in answers.items():
-        if isinstance(value, bool):
-            value = "true" if value else "false"
-        args += ["--data", f"{key}={value}"]
-    args += [str(TEMPLATE), str(dest)]
-    return subprocess.run(args, capture_output=True, text=True, timeout=600)
 
 
 @unittest.skipIf(copier_command() is None, "uvx not found: run `mise install` (uv) first")
@@ -247,7 +224,7 @@ class RenderTest(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     cwd=out,
-                    env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                    env=tool_env(Path(self.tmp.name)),
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -326,6 +303,30 @@ class RenderTest(unittest.TestCase):
                     )
                     self.assertNotEqual(hook.returncode, 0, f"pre-push let a committed {rel} through")
                     self.assertIn("Push blocked", hook.stderr)
+
+    @unittest.skipIf(missing_tools("just", "gitleaks", "actionlint"), "just, gitleaks or actionlint not on PATH")
+    def test_generated_just_ci_passes(self) -> None:
+        # What a new repo runs first: `just ci` on a fresh commit, the same recipe its CI mirrors.
+        for case in CASES:
+            with self.subTest(case=case):
+                repo = self.committed_copy(case, "just-ci")
+                env = tool_env(Path(self.tmp.name))
+                result = subprocess.run(["just", "ci"], capture_output=True, text=True, cwd=repo, env=env, timeout=300)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_copyright_year_is_the_render_year(self) -> None:
+        # No case passes copyright_year, so the default applies: the year of the render, not a literal.
+        year = time.strftime("%Y")
+        for case, out, _ in self.cases():
+            with self.subTest(case=case):
+                self.assertIn(f"Copyright (c) {year} Nghiep Pham", (out / "LICENSE").read_text(encoding="utf-8"))
+                answers = (out / ".copier-answers.yml").read_text(encoding="utf-8")
+                self.assertRegex(answers, rf"(?m)^copyright_year: {year}$")
+        config = (TEMPLATE / "copier.yml").read_text(encoding="utf-8")
+        block = re.search(r"(?ms)^copyright_year:\n(.*?)(?=^\S)", config)
+        self.assertIsNotNone(block)
+        self.assertRegex(block.group(1), r"default: .*strftime", "copyright_year default must not be a literal year")
+        self.assertNotIn("_jinja_extensions", config, "a Jinja extension would make every render need --trust")
 
     def test_bad_project_name_is_refused(self) -> None:
         dest = Path(self.tmp.name) / "bad-name"
