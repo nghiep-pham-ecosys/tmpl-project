@@ -1,0 +1,21 @@
+# gitleaks config for the working-tree scan only: `gitleaks dir --config .gitleaks-worktree.toml .`
+# The default rules, plus skips for gitignored local tool folders and local env files.
+#
+# Never rename this file to .gitleaks.toml (gitleaks loads that name by default) and never pass it
+# to `gitleaks git`. The history scan (`just gitleaks`, CI, the private pre-push hook) uses the
+# default rules with no allowlist, so a file force-added under one of these paths still fails it.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Gitignored local tool folders and env files (working-tree scan only)"
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)__pycache__/''',
+  '''(^|/)\.pytest_cache/''',
+  '''(^|/)\.tmp-session/''',
+  # Local key files are gitignored; keys live outside the repo. .env.example is still scanned.
+  '''(^|/)\.env$''',
+  '''(^|/)\.env\.local$''',
+]

@@ -58,7 +58,7 @@ Later, to pull a newer template version into a generated repo: `uvx --from copie
 | `.github/workflows/ci.yml` | `test` (python), `gitleaks`, `actionlint`, aggregate `ci-result`; actions pinned by full SHA; tools from release tarballs checked by sha256 |
 | `.github/workflows/pr-title.yml` | the `pr-title` check, same as ecosys |
 | `.githooks/pre-push` | private only: gitleaks on the pushed commits; no gitleaks, no push |
-| `.gitleaks.toml` | default rules plus an allowlist for local tool folders (`.venv`, `node_modules`, caches) and local `.env` |
+| `.gitleaks-worktree.toml` | working-tree scan only (`gitleaks dir`): default rules plus skips for gitignored tool folders (`.venv`, `node_modules`, caches) and local env files. The history scan (`gitleaks git` in `just ci`, CI and pre-push) uses the default rules with no allowlist, so a force-committed secret under those paths still fails. |
 | `.gitignore` | secrets, Python and Node caches, `.tmp-session/` |
 | `LICENSE`, `LICENSE-content`, `NOTICE` | MIT code, CC BY 4.0 text and media (optional), attributions |
 | `CONTRIBUTING.md` | flow, commit and PR title format, `Refs` line, rules |

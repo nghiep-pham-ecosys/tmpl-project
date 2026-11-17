@@ -7,6 +7,7 @@ Stdlib unittest; PyYAML is used when present for stricter YAML checks.
 from __future__ import annotations
 
 import os
+import random
 import re
 import shutil
 import stat
@@ -28,7 +29,7 @@ BASE_FILES = (
     ".github/workflows/ci.yml",
     ".github/workflows/pr-title.yml",
     ".gitignore",
-    ".gitleaks.toml",
+    ".gitleaks-worktree.toml",
     ".mise.toml",
     "CLAUDE.md",
     "CONTRIBUTING.md",
@@ -68,6 +69,34 @@ SHA_PIN = re.compile(r"^\s*-?\s*uses:\s*[\w.-]+/[\w./-]+@[0-9a-f]{40}(\s|$)")
 # Template delimiters left in the output (the template always writes "[[ name ]]" with spaces).
 # Bash tests such as [[ "$x" ]] and TOML tables such as [[allowlists]] in verbatim files do not match.
 LEFTOVER = re.compile(r"\[\[ [a-z_]|\[% |\[# ")
+
+
+# Paths that .gitignore keeps out of commits and the working-tree scan skips. A secret force-added
+# under any of them must still fail the history scan, except node_modules/: the gitleaks default
+# rules (upstream, not this template) allowlist it in every scan mode.
+IGNORED_SECRET_PATHS = (".env", ".env.local", ".venv/lib/leak.txt", "node_modules/pkg/leak.txt")
+HISTORY_SECRET_PATHS = tuple(p for p in IGNORED_SECRET_PATHS if not p.startswith("node_modules/"))
+GIT = ["git", "-c", "user.name=Example Co", "-c", "user.email=dev@example.com", "-c", "commit.gpgsign=false"]
+
+
+def fake_aws_key() -> str:
+    """An AWS-style access key id built at run time, so no key literal sits in this file.
+
+    The AWS docs example key ends in EXAMPLE, which the default gitleaks rules allow.
+    """
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    return "AKIA" + "".join(random.SystemRandom().choice(alphabet) for _ in range(16))
+
+
+def gitleaks(*args: str, cwd: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["gitleaks", *args, "--redact", "--no-banner", "."], capture_output=True, text=True, cwd=cwd, timeout=120
+    )
+
+
+def git(*args: str, cwd: Path) -> str:
+    result = subprocess.run([*GIT, *args], capture_output=True, text=True, cwd=cwd, check=True)
+    return result.stdout.strip()
 
 
 def copier_command() -> list[str] | None:
@@ -221,6 +250,82 @@ class RenderTest(unittest.TestCase):
                     env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def committed_copy(self, case: str, label: str) -> Path:
+        """A fresh copy of a rendered repo with everything committed on main."""
+        repo = Path(self.tmp.name) / "git" / f"{case}-{label}"
+        shutil.copytree(self.out[case], repo)
+        git("init", "-q", "-b", "main", cwd=repo)
+        git("add", "-A", cwd=repo)
+        git("commit", "-q", "-m", "chore: initial commit", cwd=repo)
+        return repo
+
+    def test_no_default_gitleaks_config(self) -> None:
+        # gitleaks loads .gitleaks.toml by default, also for `gitleaks git`. The allowlist must stay
+        # in the worktree-only file, which only `gitleaks dir --config` reads.
+        for case, out, _ in self.cases():
+            with self.subTest(case=case):
+                self.assertFalse((out / ".gitleaks.toml").exists())
+                justfile = (out / "justfile").read_text(encoding="utf-8")
+                self.assertIn("gitleaks dir --config .gitleaks-worktree.toml", justfile)
+                for line in justfile.splitlines():
+                    if "gitleaks git" in line:
+                        self.assertNotIn("--config", line)
+                for path in (out / ".github/workflows/ci.yml", out / ".githooks/pre-push"):
+                    if path.exists():
+                        self.assertNotIn("gitleaks-worktree", path.read_text(encoding="utf-8"))
+
+    @unittest.skipIf(shutil.which("gitleaks") is None, "gitleaks not on PATH")
+    def test_clean_repo_passes_gitleaks(self) -> None:
+        for case in CASES:
+            with self.subTest(case=case):
+                repo = self.committed_copy(case, "clean")
+                result = gitleaks("dir", "--config", ".gitleaks-worktree.toml", cwd=repo)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                result = gitleaks("git", cwd=repo)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipIf(shutil.which("gitleaks") is None, "gitleaks not on PATH")
+    def test_worktree_scan_skips_only_ignored_paths(self) -> None:
+        repo = self.committed_copy("public-python", "worktree")
+        for rel in IGNORED_SECRET_PATHS:
+            path = repo / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"aws_access_key_id = {fake_aws_key()}\n", encoding="utf-8")
+        result = gitleaks("dir", "--config", ".gitleaks-worktree.toml", cwd=repo)
+        self.assertEqual(result.returncode, 0, "worktree scan read a gitignored path:\n" + result.stdout)
+        (repo / "notes.txt").write_text(f"aws_access_key_id = {fake_aws_key()}\n", encoding="utf-8")
+        result = gitleaks("dir", "--config", ".gitleaks-worktree.toml", cwd=repo)
+        self.assertNotEqual(result.returncode, 0, "worktree scan missed a secret in a normal file")
+
+    @unittest.skipIf(shutil.which("gitleaks") is None, "gitleaks not on PATH")
+    def test_force_committed_secret_fails_history_scan(self) -> None:
+        for case, _, answers in self.cases():
+            for rel in HISTORY_SECRET_PATHS:
+                with self.subTest(case=case, path=rel):
+                    repo = self.committed_copy(case, "leak-" + re.sub(r"\W", "_", rel))
+                    base = git("rev-parse", "HEAD", cwd=repo)
+                    path = repo / rel
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(f"aws_access_key_id = {fake_aws_key()}\n", encoding="utf-8")
+                    git("check-ignore", "-q", rel, cwd=repo)  # raises if .gitignore does not cover it
+                    git("add", "-f", rel, cwd=repo)
+                    git("commit", "-q", "-m", "chore: leak", cwd=repo)
+                    head = git("rev-parse", "HEAD", cwd=repo)
+                    result = gitleaks("git", cwd=repo)
+                    self.assertNotEqual(result.returncode, 0, f"gitleaks git missed a committed {rel}")
+                    if answers["visibility"] != "private":
+                        continue
+                    hook = subprocess.run(
+                        [str(repo / ".githooks/pre-push"), "origin", "git@example.com:acme/x.git"],
+                        input=f"refs/heads/main {head} refs/heads/main {base}\n",
+                        capture_output=True,
+                        text=True,
+                        cwd=repo,
+                        timeout=120,
+                    )
+                    self.assertNotEqual(hook.returncode, 0, f"pre-push let a committed {rel} through")
+                    self.assertIn("Push blocked", hook.stderr)
 
     def test_bad_project_name_is_refused(self) -> None:
         dest = Path(self.tmp.name) / "bad-name"

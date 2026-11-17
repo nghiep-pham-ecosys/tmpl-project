@@ -17,9 +17,10 @@ actionlint:
     actionlint
     @echo "actionlint: ok"
 
-# Secret scan: the working tree (tracked and untracked files), then the git history
+# Secret scan: the working tree (skips gitignored tool folders), then the full git history.
+# The history scan has no allowlist: a force-committed secret under a skipped path still fails.
 gitleaks:
-    gitleaks dir --redact --no-banner -v .
+    gitleaks dir --config .gitleaks-worktree.toml --redact --no-banner -v .
     gitleaks git --redact --no-banner -v .
 
 [% if visibility == 'private' %]
