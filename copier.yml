@@ -78,10 +78,12 @@ copyright_holder:
   help: Name in the LICENSE files
   default: Nghiep Pham
 
+# The default is the year of the first render. strftime comes from the Ansible filters that Copier
+# always loads, so it needs no --trust. `copier update` keeps the stored answer, so the year stays the first one.
 copyright_year:
   type: int
   help: First year in the LICENSE files
-  default: 2026
+  default: "[[ '%Y' | strftime ]]"
 
 org:
   type: str

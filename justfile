@@ -6,9 +6,14 @@ set shell := ["bash", "-cu"]
 default:
     @just --list --unsorted
 
-# Render the template for several answer sets and check the output (needs uvx)
+# Static checks, render every answer set, copier update v0.1.0 -> v0.1.1 (needs uvx)
 test:
     python3 -m unittest discover -v -s tests -p 'test_*.py'
+
+# Lint this repo's workflows (template/.github is checked in the rendered repos by `just test`)
+actionlint:
+    actionlint
+    @echo "actionlint: ok"
 
 # Secret scan: the working tree, then the git history
 gitleaks:
@@ -16,4 +21,4 @@ gitleaks:
     gitleaks git --redact --no-banner -v .
 
 # Everything a CI run would do
-ci: test gitleaks
+ci: test actionlint gitleaks

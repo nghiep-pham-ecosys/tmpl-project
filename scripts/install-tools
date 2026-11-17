@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Install the CI tools from their GitHub release archives into one folder (Linux x86_64 runners).
+# Each archive must match the pinned sha256 below and the release's own checksum file.
+# Versions match .mise.toml; tests/test_repo.py checks that they stay in step.
+#
+# Usage: scripts/install-tools <dir> <tool>...   tools: uv just gitleaks actionlint
+# Then put <dir> on PATH (in a workflow: echo "<dir>" >> "$GITHUB_PATH").
+set -euo pipefail
+
+UV_VERSION=0.13.7
+UV_SHA256=c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83
+JUST_VERSION=1.59.0
+JUST_SHA256=409044617b6f06517c1035e55ca38c8c856ff8b650e41bc2aa1ef82d5903a23e
+GITLEAKS_VERSION=8.30.1
+GITLEAKS_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+ACTIONLINT_VERSION=1.7.12
+ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
+if [ "$#" -lt 2 ]; then
+  echo "usage: $0 <dir> <tool>... (uv just gitleaks actionlint)" >&2
+  exit 2
+fi
+if [ "$(uname -s)-$(uname -m)" != "Linux-x86_64" ]; then
+  echo "install-tools: only Linux x86_64 is supported; use mise locally" >&2
+  exit 2
+fi
+
+dest="$1"
+shift
+mkdir -p "${dest}"
+work="$(mktemp -d)"
+trap 'rm -rf "${work}"' EXIT
+
+fetch() {
+  curl -fsSL --retry 3 -o "$2" "$1"
+}
+
+for tool in "$@"; do
+  strip=0
+  case "${tool}" in
+    uv)
+      base="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
+      archive="uv-x86_64-unknown-linux-gnu.tar.gz"
+      sums="${archive}.sha256"
+      sha="${UV_SHA256}"
+      members=("uv-x86_64-unknown-linux-gnu/uv" "uv-x86_64-unknown-linux-gnu/uvx")
+      strip=1
+      ;;
+    just)
+      base="https://github.com/casey/just/releases/download/${JUST_VERSION}"
+      archive="just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+      sums="SHA256SUMS"
+      sha="${JUST_SHA256}"
+      members=("just")
+      ;;
+    gitleaks)
+      base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+      archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+      sums="gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+      sha="${GITLEAKS_SHA256}"
+      members=("gitleaks")
+      ;;
+    actionlint)
+      base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+      archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+      sums="actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+      sha="${ACTIONLINT_SHA256}"
+      members=("actionlint")
+      ;;
+    *)
+      echo "install-tools: unknown tool ${tool}" >&2
+      exit 2
+      ;;
+  esac
+  fetch "${base}/${archive}" "${work}/${archive}"
+  fetch "${base}/${sums}" "${work}/${tool}.sums"
+  # The pinned hash must appear in the release checksum file and match the download.
+  if ! grep -qx "${sha}  ${archive}" "${work}/${tool}.sums"; then
+    echo "install-tools: pinned sha256 for ${archive} is not in ${sums}" >&2
+    exit 1
+  fi
+  echo "${sha}  ${work}/${archive}" | sha256sum -c -
+  tar -xzf "${work}/${archive}" -C "${dest}" --strip-components="${strip}" "${members[@]}"
+done
+
+for tool in "$@"; do
+  "${dest}/${tool}" --version
+done

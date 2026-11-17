@@ -1,0 +1,132 @@
+# CI for the tmpl-project template repo.
+# Every action is pinned by full commit SHA, and only GitHub-owned actions are used (ADR 0002).
+# uv, just, gitleaks and actionlint come from their release archives, checked by sha256 (scripts/install-tools).
+# The merge tool needs two checks: ci-result (this file) and pr-title.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Same pin as tests/_kit.py and README.md (tests/test_repo.py checks it).
+  COPIER_VERSION: 9.19.1
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: python3 -m pip install --disable-pip-version-check pyyaml==6.0.1
+      - name: Install tools
+        run: |
+          scripts/install-tools "${RUNNER_TEMP}/bin" uv just gitleaks actionlint
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+      - name: Render every answer set, run copier update, check the output
+        run: just test
+
+  render:
+    name: render (${{ matrix.visibility }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        visibility: [public, private]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install tools
+        run: |
+          scripts/install-tools "${RUNNER_TEMP}/bin" uv just gitleaks actionlint
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+      - name: Render the template with default answers
+        env:
+          VISIBILITY: ${{ matrix.visibility }}
+        run: |
+          set -euo pipefail
+          # --vcs-ref HEAD renders this commit; without it Copier would pick the latest tag.
+          uvx --from "copier==${COPIER_VERSION}" copier copy --defaults --vcs-ref HEAD \
+            --data project_name=example-lab --data "visibility=${VISIBILITY}" \
+            . "${RUNNER_TEMP}/example-lab"
+      - name: Commit the generated repo
+        working-directory: ${{ runner.temp }}/example-lab
+        run: |
+          set -euo pipefail
+          git init -q -b main
+          git add -A
+          git -c user.name="Example Co" -c user.email=dev@example.com commit -q -m "chore: generate from tmpl-project"
+          git ls-files
+      - name: Run the generated repo's checks (just ci)
+        working-directory: ${{ runner.temp }}/example-lab
+        run: just ci
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install tools
+        run: |
+          scripts/install-tools "${RUNNER_TEMP}/bin" just gitleaks
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+      - name: Scan the working tree and the full history
+        run: just gitleaks
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install tools
+        run: |
+          scripts/install-tools "${RUNNER_TEMP}/bin" actionlint
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+      - name: Lint this repo's workflows
+        run: actionlint -color
+
+  ci-result:
+    name: ci-result
+    if: always()
+    needs: [test, render, gitleaks, actionlint]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job must succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "${NEEDS}" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if ! echo "${NEEDS}" | jq -e 'length > 0 and all(.[]; .result == "success")' > /dev/null; then
+            echo "::error::ci-result fails because at least one job did not succeed"
+            exit 1
+          fi

@@ -1,5 +1,6 @@
 # Toolchain for developing the template. Same pins as the ecosys root .mise.toml.
-# uv provides uvx, which runs Copier at the version pinned in tests/test_render.py.
+# uv provides uvx, which runs Copier at the version pinned in tests/_kit.py.
+# CI installs the same versions with scripts/install-tools (tests/test_repo.py keeps them in step).
 [tools]
 uv = "0.13.7"
 just = "1.59.0"
