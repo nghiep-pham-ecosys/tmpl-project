@@ -1,0 +1,7 @@
+# Toolchain for developing the template. Same pins as the ecosys root .mise.toml.
+# uv provides uvx, which runs Copier at the version pinned in tests/test_render.py.
+[tools]
+uv = "0.13.7"
+just = "1.59.0"
+gitleaks = "8.30.1"
+actionlint = "1.7.12"

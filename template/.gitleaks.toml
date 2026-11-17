@@ -1,0 +1,17 @@
+# gitleaks config: the default rules, plus local tool folders that are never committed.
+# `gitleaks dir` scans the working tree, so it would otherwise read virtualenvs and caches.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Local tool folders (gitignored, never committed)"
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)__pycache__/''',
+  '''(^|/)\.pytest_cache/''',
+  '''(^|/)\.tmp-session/''',
+  # Local key files are gitignored; keys live outside the repo. .env.example is still scanned.
+  '''(^|/)\.env$''',
+  '''(^|/)\.env\.local$''',
+]

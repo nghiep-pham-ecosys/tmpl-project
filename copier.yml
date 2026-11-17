@@ -1,0 +1,90 @@
+# tmpl-project v0.1: the starter for a new repo in the nghiep-pham-ecosys org (spec §5.5).
+# Render with: uvx --from copier==9.19.1 copier copy <this repo> <new folder>
+# See README.md for what each answer does.
+
+_min_copier_version: "9.4.0"
+_subdirectory: template
+_templates_suffix: .jinja
+_answers_file: .copier-answers.yml
+
+# GitHub workflows (${{ }}) and justfiles ({{ }}) use Jinja's default delimiters, so the
+# template uses [[ ]] for variables and [% %] for blocks. Never write bash "[[" in a .jinja file.
+_envops:
+  block_start_string: "[%"
+  block_end_string: "%]"
+  variable_start_string: "[["
+  variable_end_string: "]]"
+  comment_start_string: "[#"
+  comment_end_string: "#]"
+  keep_trailing_newline: true
+  trim_blocks: true
+  lstrip_blocks: true
+
+project_name:
+  type: str
+  help: Repo name (lower case, digits and hyphens, starts with a letter)
+  default: example-lab
+  validator: >-
+    [% if not (project_name | regex_search('^[a-z][a-z0-9-]{1,62}$')) %]
+    Use lower case letters, digits and hyphens, and start with a letter.
+    [% endif %]
+
+description:
+  type: str
+  help: One sentence that says what the repo is for
+  default: An example project in the nghiep-pham-ecosys workspace.
+  validator: "[% if not description.strip() %]Write one sentence.[% endif %]"
+
+area:
+  type: str
+  help: Workspace area that owns the repo (CONTEXT.md, Areas)
+  choices:
+    - lab
+    - learn
+    - content
+    - ecosys
+    - jobs
+  default: lab
+
+visibility:
+  type: str
+  help: GitHub visibility. Private repos get a gitleaks pre-push hook (no rulesets on the Free plan).
+  choices:
+    - public
+    - private
+  default: public
+
+status:
+  type: str
+  help: Project status in project.yaml (only active projects count against the WIP limit)
+  choices:
+    - active
+    - paused
+    - done
+  default: active
+
+content_licence:
+  type: bool
+  help: Licence text, images and other media under CC BY 4.0 (LICENSE-content)? Code is always MIT.
+  default: true
+
+python:
+  type: bool
+  help: Add a Python 3.12 stdlib unittest smoke test and a CI test job?
+  default: true
+
+copyright_holder:
+  type: str
+  help: Name in the LICENSE files
+  default: Nghiep Pham
+
+copyright_year:
+  type: int
+  help: First year in the LICENSE files
+  default: 2026
+
+org:
+  type: str
+  help: GitHub org that will own the repo
+  default: nghiep-pham-ecosys
+  when: false

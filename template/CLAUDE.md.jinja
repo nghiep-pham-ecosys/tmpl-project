@@ -1,0 +1,31 @@
+# [[ project_name ]]: agent notes
+
+[[ description ]]
+
+- Org `[[ org ]]`, area `[[ area ]]`, [[ visibility ]] repo, default branch `main`.
+- The workspace rules apply: read `../../CLAUDE.md` (the `ecosys` root) first. This file imports nothing.
+- Sessions start at the workspace root. A session opened here still follows the root rules.
+[% if visibility == 'public' %]
+- Public repo: no personal data, no employer, client or recruiter names, no contact details, no claude.ai links
+  (spec §10.2). Tests use synthetic data only (Example Co, Acme).
+[% else %]
+- Private repo: no rulesets on the Free plan. Run `just hooks` once per clone, so the gitleaks pre-push hook
+  guards every push. No hook, no push.
+[% endif %]
+
+## Commands
+
+| Command | Does |
+|---|---|
+| `just ci` | everything CI runs: [% if python %]unit tests, [% endif %]actionlint, gitleaks |
+[% if python %]
+| `just test` | unit tests (`unittest`, files `tests/test_*.py`) |
+[% endif %]
+[% if visibility == 'private' %]
+| `just hooks` | point git at `.githooks/` (gitleaks pre-push) |
+[% endif %]
+
+## Ship
+
+Commit `type: description` with a body line `Refs <repo>#<n>`; never `Fixes` or `Closes`.
+PR checks: `ci-result` and `pr-title`. Merge only through `tools/ship/merge` in `ecosys` (skill `ship`).

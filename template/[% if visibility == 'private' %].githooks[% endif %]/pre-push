@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Pre-push: scan the commits being pushed with gitleaks and block the push on any finding.
+# Fails closed: no gitleaks, no push. Enable once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+
+find_gitleaks() {
+  if command -v gitleaks >/dev/null 2>&1; then
+    command -v gitleaks
+    return 0
+  fi
+  local candidate found=""
+  for candidate in "$HOME"/.local/share/mise/installs/gitleaks/*/gitleaks \
+                   "$HOME"/.local/share/mise/installs/gitleaks/*/bin/gitleaks; do
+    [ -x "$candidate" ] && found="$candidate"
+  done
+  [ -n "$found" ] && { echo "$found"; return 0; }
+  return 1
+}
+
+if ! GITLEAKS="$(find_gitleaks)"; then
+  echo "pre-push: gitleaks not found on PATH or under ~/.local/share/mise/installs/gitleaks/. Push blocked." >&2
+  echo "pre-push: install it with 'mise install gitleaks' at the workspace root." >&2
+  exit 1
+fi
+
+status=0
+# stdin: <local ref> <local sha> <remote ref> <remote sha>, one line per ref being pushed.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ "$local_sha" =~ ^0+$ ]]; then
+    continue  # branch deletion: nothing to scan
+  fi
+  if [[ "$remote_sha" =~ ^0+$ ]]; then
+    range="$local_sha"  # new remote branch: scan all history reachable from it
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  echo "pre-push: gitleaks on $local_ref ($range)" >&2
+  if ! "$GITLEAKS" git --redact --no-banner --log-opts="$range" .; then
+    echo "pre-push: gitleaks found secrets in $local_ref. Push blocked." >&2
+    status=1
+  fi
+done
+
+exit "$status"

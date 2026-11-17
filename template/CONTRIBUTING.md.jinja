@@ -1,0 +1,45 @@
+# Contributing to [[ project_name ]]
+
+[% if visibility == 'public' %]
+Issues and pull requests are welcome. This repo is one person's workspace, so a reply can take a few days.
+[% else %]
+This is a private repo. Changes come through pull requests from the owner and the owner's agents.
+[% endif %]
+
+## Flow
+
+1. One issue, one pull request. Branch `<type>/<issue-number>-<slug>` from `main`, for example `docs/12-setup-notes`.
+2. Run `just ci` before you push. It runs what CI runs.
+3. Open a pull request. Two checks must be green: `ci-result` and `pr-title`.
+4. The owner merges with a squash merge. The PR title becomes the commit subject.
+
+## Commits and pull request titles
+
+- Subject: `type: description`, lower case, imperative, no trailing period.
+  Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`. The `pr-title` check enforces this on PR titles.
+- Body: one line `Refs <repo>#<n>`. Several refs are comma-separated.
+- Never `Fixes`, `Closes` or `Resolves`: they close the issue before the change is verified.
+
+```
+fix: handle an empty input file
+
+Refs [[ project_name ]]#3
+```
+
+## Rules
+
+- No secrets: no tokens, keys or `.env` files. gitleaks runs in `just ci`[% if visibility == 'private' %], before every push (`just hooks`)[% endif %] and in CI.
+[% if visibility == 'public' %]
+- Public-safe: no personal data, no contact details, no names of employers, clients or recruiters.
+[% endif %]
+- Tests use synthetic data only (Example Co, Acme).
+- New third-party material needs a line in `NOTICE` with its source and licence.
+
+## Licence
+
+[% if content_licence %]
+By contributing, you agree that your code is licensed under MIT (`LICENSE`) and your text and media under
+CC BY 4.0 (`LICENSE-content`).
+[% else %]
+By contributing, you agree that your contribution is licensed under MIT (`LICENSE`).
+[% endif %]

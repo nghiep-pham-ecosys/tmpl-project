@@ -1,0 +1,6 @@
+# Toolchain for this repo. Versions match the ecosys root .mise.toml (spec §11).
+# Bump them in a PR, never ad hoc. Python is not pinned: tests use the system python3 (3.12).
+[tools]
+just = "1.59.0"
+gitleaks = "8.30.1"
+actionlint = "1.7.12"

@@ -1,0 +1,16 @@
+# Project card (spec §5.5). tools/ws/projects builds the portfolio list from these files.
+# Only status: active counts against the WIP limit of the area.
+name: [[ project_name ]]
+area: [[ area ]]
+status: [[ status ]]  # active | paused | done
+visibility: [[ visibility ]]
+stack:
+[% if python %]
+  - python 3.12
+[% endif %]
+  - github actions
+  - just
+  - mise
+highlights: []  # one line per shipped result, each with evidence in links
+links:
+  repo: https://github.com/[[ org ]]/[[ project_name ]]

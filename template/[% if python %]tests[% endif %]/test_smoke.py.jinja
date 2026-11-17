@@ -1,0 +1,28 @@
+"""Smoke test: the repo carries the files that every project in the workspace needs.
+
+Replace or extend it with real tests once there is code. Stdlib only.
+"""
+
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PROJECT_NAME = "[[ project_name ]]"
+
+
+class RepoBaseTest(unittest.TestCase):
+    def test_base_files_exist(self) -> None:
+        for name in ("README.md", "CLAUDE.md", "project.yaml", "LICENSE", "NOTICE", "CONTRIBUTING.md"):
+            with self.subTest(name=name):
+                self.assertTrue((ROOT / name).is_file(), f"{name} is missing")
+
+    def test_project_card_names_this_repo(self) -> None:
+        text = (ROOT / "project.yaml").read_text(encoding="utf-8")
+        self.assertRegex(text, rf"(?m)^name: {re.escape(PROJECT_NAME)}$")
+        self.assertRegex(text, r"(?m)^status: (active|paused|done)\b")
+        self.assertRegex(text, r"(?m)^visibility: (public|private)$")
+
+
+if __name__ == "__main__":
+    unittest.main()

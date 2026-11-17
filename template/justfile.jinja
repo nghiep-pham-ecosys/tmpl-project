@@ -1,0 +1,33 @@
+# Commands for [[ project_name ]]. Run `just` to list them.
+# Tool versions are pinned in .mise.toml; outside an activated shell use `mise exec -- just ci`.
+set shell := ["bash", "-cu"]
+
+# List the recipes
+default:
+    @just --list --unsorted
+
+[% if python %]
+# Unit tests (stdlib unittest, files tests/test_*.py)
+test:
+    python3 -m unittest discover -v -s tests -p 'test_*.py'
+
+[% endif %]
+# Lint GitHub workflows
+actionlint:
+    actionlint
+    @echo "actionlint: ok"
+
+# Secret scan: the working tree (tracked and untracked files), then the git history
+gitleaks:
+    gitleaks dir --redact --no-banner -v .
+    gitleaks git --redact --no-banner -v .
+
+[% if visibility == 'private' %]
+# Point git at .githooks/ (gitleaks pre-push). Run once per clone.
+hooks:
+    git config core.hooksPath .githooks
+    @echo "hooks: core.hooksPath = $(git config core.hooksPath)"
+
+[% endif %]
+# Everything CI runs
+ci: [% if python %]test [% endif %]actionlint gitleaks

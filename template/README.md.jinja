@@ -1,0 +1,43 @@
+# [[ project_name ]]
+
+[[ description ]]
+
+Status: **[[ status ]]** · Area: `[[ area ]]` · Part of the [`[[ org ]]`](https://github.com/[[ org ]]) workspace.
+
+## Quick start
+
+```sh
+mise install   # just, gitleaks and actionlint at the pinned versions (.mise.toml)
+[% if visibility == 'private' %]
+just hooks     # once per clone: gitleaks runs before every push
+[% endif %]
+just ci        # [% if python %]unit tests, [% endif %]workflow lint and secret scan, the same as CI
+```
+
+## Layout
+
+| Path | What |
+|---|---|
+| `project.yaml` | project card: name, area, status, stack, highlights, links, visibility |
+| `CLAUDE.md` | agent notes; the workspace rules in `ecosys` apply |
+| `.github/workflows/` | `ci` (jobs[% if python %] `test`,[% endif %] `gitleaks`, `actionlint`, aggregate `ci-result`) and `pr-title` |
+[% if visibility == 'private' %]
+| `.githooks/pre-push` | gitleaks on the commits being pushed; fails closed |
+[% endif %]
+[% if python %]
+| `tests/` | unit tests (`unittest`, stdlib only) |
+[% endif %]
+| `.copier-answers.yml` | answers for `copier update` from `tmpl-project`; do not edit by hand |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Licence
+
+[% if content_licence %]
+Code is under the [MIT licence](LICENSE). Text, images and other media are under
+[CC BY 4.0](LICENSE-content). Third-party material and its licences are listed in [NOTICE](NOTICE).
+[% else %]
+Code is under the [MIT licence](LICENSE). Third-party material and its licences are listed in [NOTICE](NOTICE).
+[% endif %]
